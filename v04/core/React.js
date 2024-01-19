@@ -28,65 +28,82 @@ function createElement(type, props, ...children) {
 // 3.append
 
 function render(el, container) {
-    workOfUnit = {}
-
-    // //  1.创建dom
+    nextWorkOfUnit = {
+        dom: container,
+        props: {
+            children: [el]
+        }
+    }
 }
 
 let nextWorkOfUnit = null
 function workLoop(deadline) {
     let shouldYield = false
-    while (!shouldYield) {
+    while (!shouldYield && nextWorkOfUnit) {
         // TODO:渲染dom的逻辑:执行完一个任务返回下一个任务
-        nextWorkOfUnit = performWorkOfUnit(nextWorkOfUnit)
+        nextWorkOfUnit = performFiberOfUnit(nextWorkOfUnit)
         shouldYield = deadline.timeRemaining() < 1
     }
 
     // 重新调用方法，实现在每一个任务注入回调
     requestIdleCallback(workLoop)
 }
-
-function performWorkOfUnit(work) {
-    //  1.创建dom
-    const dom = work.type === 'TEXT_ELEMENT' ? document.createTextNode('') : document.createElement(work.type)
-
-    work.parent.dom.append(dom) //添加到父级容器
-
-    //  2.遍历处理props
-    Object.keys(work.props).forEach((key) => {
+// 封装创建dom
+function createDom(type) {
+    return type === 'TEXT_ELEMENT' ? document.createTextNode('') : document.createElement(type)
+}
+// 封装处理props
+function updateProps(dom, props) {
+    Object.keys(props).forEach((key) => {
         if (key !== 'children') {
-            dom[key] = work.props[key]
+            dom[key] = props[key]
         }
     })
-    // 3.建立关系，转换链表，设置指针
-    const children = work.props.children
+}
+// 3.建立关系，转换链表，设置指针
+function initChildren(fiber) {
+    const children = fiber.props.children
     let prevChild = null
 
     children.forEach((child, index) => {
         // 为了不破坏原有的vnode结构，先建一个对象
-        const newWork = {
+        const newFiber = {
             type: child.type,
             props: child.props,
             child: null,
             sibling: null,
-            parent: work,
+            parent: fiber,
             dom: null
         }
         if (index === 0) {
-            work.child = newWork
+            fiber.child = newFiber
         } else {
-            prevChild.sibling = newWork
+            prevChild.sibling = newFiber
         }
-        prevChild = newWork
+        prevChild = newFiber
     })
+}
+function performFiberOfUnit(fiber) {
+    if (!fiber.dom) {
+        //  1.创建dom
+        const dom = (fiber.dom = createDom(fiber.type))
+
+        fiber.parent.dom.append(dom) //添加到父级容器
+
+        //  2.遍历处理props
+        updateProps(dom, fiber.props)
+    }
+
+    // 3.建立关系，转换链表，设置指针
+    initChildren(fiber)
     // 4.返回下一要执行的任务
-    if (work.child) {
-        return work.child
+    if (fiber.child) {
+        return fiber.child
     }
-    if (work.sibling) {
-        return work.sibling
+    if (fiber.sibling) {
+        return fiber.sibling
     }
-    return work.parent?.sibling
+    return fiber.parent?.sibling
 }
 requestIdleCallback(workLoop)
 
