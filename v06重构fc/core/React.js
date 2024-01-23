@@ -17,7 +17,8 @@ function createElement(type, props, ...children) {
         props: {
             ...props,
             children: children.map((child) => {
-                return typeof child === 'string' ? createTextNode(child) : child
+                const isTextNode = typeof child === 'string' || typeof child === 'number'
+                return isTextNode ? createTextNode(child) : child
             })
         }
     }
@@ -63,7 +64,14 @@ function commitRoot() {
 function commitWork(fiber) {
     // 递归
     if (!fiber) return
-    fiber.parent.dom.append(fiber.dom)
+
+    let fiberParent = fiber.parent
+    while (!fiberParent.dom) {
+        fiberParent = fiberParent.parent
+    }
+    if (fiber.dom) {
+        fiberParent.dom.append(fiber.dom)
+    }
 
     // 处理子节点
     commitWork(fiber.child)
@@ -83,12 +91,10 @@ function updateProps(dom, props) {
     })
 }
 // 3.建立关系，转换链表，设置指针
-function initChildren(fiber) {
-    const children = fiber.props.children
+function initChildren(fiber, children) {
     let prevChild = null
 
     children.forEach((child, index) => {
-        // 为了不破坏原有的vnode结构，先建一个对象
         const newFiber = {
             type: child.type,
             props: child.props,
@@ -105,38 +111,47 @@ function initChildren(fiber) {
         prevChild = newFiber
     })
 }
-function performFiberOfUnit(fiber) {
+
+function updateFunctionComponent(fiber) {
+    const children = [fiber.type(fiber.props)]
+
+    initChildren(fiber, children)
+}
+function updateHostComponent(fiber) {
     if (!fiber.dom) {
-        //  1.创建dom
         const dom = (fiber.dom = createDom(fiber.type))
 
-        // fiber.parent.dom.append(dom) //添加到父级容器
-
-        //  2.遍历处理props
         updateProps(dom, fiber.props)
     }
+    const children = fiber.props.children
 
-    // 3.建立关系，转换链表，设置指针
-    initChildren(fiber)
+    initChildren(fiber, children)
+}
+function performFiberOfUnit(fiber) {
+    const isFunctionComponent = typeof fiber.type == 'function'
+
+    if (isFunctionComponent) {
+        updateFunctionComponent(fiber)
+    } else {
+        updateHostComponent(fiber)
+    }
+
     // 4.返回下一要执行的任务
     if (fiber.child) {
         return fiber.child
     }
-    if (fiber.sibling) {
-        return fiber.sibling
+
+    // 解决bug：相邻count 不渲染第二个的问题
+    let nextFiber = fiber
+    while (nextFiber) {
+        if (nextFiber.sibling) return nextFiber.sibling
+        nextFiber = nextFiber.parent
     }
-    return fiber.parent?.sibling
 }
 requestIdleCallback(workLoop)
-
 const React = {
     render,
     createElement
 }
 
 export default React
-
-// 统一提交：
-// 问题：中途有可能没空余时间，用户会看到渲染一半的dom
-// 解决思路：计算结束后统一添加到屏幕
-// 实现

@@ -17,7 +17,8 @@ function createElement(type, props, ...children) {
         props: {
             ...props,
             children: children.map((child) => {
-                return typeof child === 'string' ? createTextNode(child) : child
+                const isTextNode = typeof child === 'string' || typeof child === 'number'
+                return isTextNode ? createTextNode(child) : child
             })
         }
     }
@@ -63,7 +64,14 @@ function commitRoot() {
 function commitWork(fiber) {
     // 递归
     if (!fiber) return
-    fiber.parent.dom.append(fiber.dom)
+
+    let fiberParent = fiber.parent
+    while (!fiberParent.dom) {
+        fiberParent = fiberParent.parent
+    }
+    if (fiber.dom) {
+        fiberParent.dom.append(fiber.dom)
+    }
 
     // 处理子节点
     commitWork(fiber.child)
@@ -83,8 +91,7 @@ function updateProps(dom, props) {
     })
 }
 // 3.建立关系，转换链表，设置指针
-function initChildren(fiber) {
-    const children = fiber.props.children
+function initChildren(fiber, children) {
     let prevChild = null
 
     children.forEach((child, index) => {
@@ -106,29 +113,41 @@ function initChildren(fiber) {
     })
 }
 function performFiberOfUnit(fiber) {
-    if (!fiber.dom) {
-        //  1.创建dom
-        const dom = (fiber.dom = createDom(fiber.type))
+    const isFunctionComponent = typeof fiber.type == 'function'
 
-        // fiber.parent.dom.append(dom) //添加到父级容器
+    if (!isFunctionComponent) {
+        if (!fiber.dom) {
+            //  1.创建dom
+            const dom = (fiber.dom = createDom(fiber.type))
 
-        //  2.遍历处理props
-        updateProps(dom, fiber.props)
+            // fiber.parent.dom.append(dom) //添加到父级容器
+
+            //  2.遍历处理props
+            updateProps(dom, fiber.props)
+        }
     }
 
+    const children = isFunctionComponent ? [fiber.type(fiber.props)] : fiber.props.children
     // 3.建立关系，转换链表，设置指针
-    initChildren(fiber)
+    initChildren(fiber, children)
     // 4.返回下一要执行的任务
     if (fiber.child) {
         return fiber.child
     }
-    if (fiber.sibling) {
-        return fiber.sibling
+    // if (fiber.sibling) {
+    //     return fiber.sibling
+    // }
+    // return fiber.parent?.sibling
+
+    // 解决bug：相邻count 不渲染第二个的问题
+    let nextFiber = fiber
+    while (nextFiber) {
+        if (nextFiber.sibling) return nextFiber.sibling
+        nextFiber = nextFiber.parent
     }
-    return fiber.parent?.sibling
+    // return nextFiber.parent?.sibling
 }
 requestIdleCallback(workLoop)
-
 const React = {
     render,
     createElement
